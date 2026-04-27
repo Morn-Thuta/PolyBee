@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx supabase *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(Get-Item \"E:\\\\Kiro Projects\\\\PolyBee\\\\supabase\\\\types.ts\")",
+      "Bash(Select-Object Name, Length, IsReadOnly, Attributes)",
+      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__get_logs",
+      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__execute_sql",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__apply_migration"
+    ]
+  }
+}
