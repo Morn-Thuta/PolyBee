@@ -1,10 +1,8 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 /**
  * TEMPORARY AUTH BYPASS FOR TESTING
  * Mock user for testing with real database
- * Using valid UUID format for compatibility with database
  */
 const MOCK_USER = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -16,58 +14,30 @@ const MOCK_USER = {
 }
 
 /**
- * Server-side Supabase client
- * Used in Server Components, API Routes, and Server Actions
- * Handles cookie-based authentication
- * 
- * TEMPORARY: Returns mock user but uses real database
- * Uses service role key to bypass RLS for testing
+ * Server-side Supabase client using service role key.
+ * Used in Server Components, API Routes, and Server Actions.
+ *
+ * Uses the service role key directly — no cookie/session complexity.
+ * Auth methods are overridden to return a mock user during the testing phase.
  */
 export function createClient() {
-  const cookieStore = cookies()
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  // Use service role key to bypass RLS during testing
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-  const client = createServerClient(supabaseUrl, supabaseKey, {
-    cookies: {
-      get(name: string) {
-        // Block Supabase auth cookies so the service role key is used
-        // as the Bearer token instead of any stale session token from cookies
-        if (name.includes('auth-token')) return undefined
-        return cookieStore.get(name)?.value
+  const client = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
-      set(name: string, value: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value, ...options })
-        } catch (error) {
-          // The `set` method was called from a Server Component.
-          // This can be ignored if you have middleware refreshing
-          // user sessions.
-        }
-      },
-      remove(name: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value: '', ...options })
-        } catch (error) {
-          // The `delete` method was called from a Server Component.
-          // This can be ignored if you have middleware refreshing
-          // user sessions.
-        }
-      },
-    },
-  })
+    }
+  )
 
-  // TEMPORARY AUTH BYPASS: Override auth methods for mock user testing
-  // getSession returns null so the service role key (not stale cookies) is
-  // used as the Bearer token on every Supabase request.
-  // getUser returns the mock user so API route auth checks pass.
+  // TEMPORARY: Override auth to return mock user until real auth is wired up
   const originalAuth = client.auth
   client.auth = {
     ...originalAuth,
     getUser: async () => ({
-      data: { user: MOCK_USER },
+      data: { user: MOCK_USER as any },
       error: null,
     }),
     getSession: async () => ({
