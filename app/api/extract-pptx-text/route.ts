@@ -6,22 +6,21 @@ import JSZip from 'jszip'
  * POST /api/extract-pptx-text
  * Extracts text from a PPTX file stored in Supabase Storage.
  *
- * Implementation: Downloads the file via service role key, then reads it as a
- * ZIP archive (PPTX = ZIP + XML) using JSZip. Iterates slide XMLs and strips
- * tags to return plain text. Pure JavaScript — no native modules, no pdfjs
- * worker, works reliably in Vercel serverless (Node.js 22+/24).
+ * Download strategy: generate a short-lived signed URL and fetch the file
+ * directly with the global fetch() API, reading it straight into an
+ * ArrayBuffer. This avoids the Blob → Buffer conversion that is unreliable
+ * in Node.js 24 serverless runtimes.
+ *
+ * Parsing strategy: PPTX = ZIP archive. JSZip reads the archive, and we
+ * pull text from every ppt/slides/slideN.xml file by matching <a:t> elements.
+ * Pure JavaScript, zero native deps.
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+      { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
     const body = await request.json()
@@ -34,25 +33,43 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Download file from Supabase Storage using service role key
-    const { data: fileData, error: downloadError } = await supabase.storage
+    // Step 1: generate a signed URL (60 s) — no Blob download, no conversion
+    const { data: signedData, error: signedError } = await supabase.storage
       .from('uploads')
-      .download(storagePath)
+      .createSignedUrl(storagePath, 60)
 
-    if (downloadError || !fileData) {
-      console.error('Storage download error:', downloadError)
+    if (signedError || !signedData?.signedUrl) {
+      console.error('Failed to create signed URL:', signedError)
       return NextResponse.json(
-        { error: 'Failed to download file from storage' },
-        { status: 404 }
+        { error: 'Failed to access file in storage' },
+        { status: 500 }
       )
     }
 
-    // Convert Blob → ArrayBuffer → Buffer
-    const arrayBuffer = await fileData.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    // Step 2: fetch the file as a raw ArrayBuffer — most reliable for binary files
+    const fileRes = await fetch(signedData.signedUrl)
+    if (!fileRes.ok) {
+      console.error('File fetch failed:', fileRes.status, fileRes.statusText)
+      return NextResponse.json(
+        { error: `Failed to download file (HTTP ${fileRes.status})` },
+        { status: 500 }
+      )
+    }
 
-    // Parse the PPTX file (ZIP archive containing XML slide files)
-    const text = await extractPptxText(buffer)
+    const arrayBuffer = await fileRes.arrayBuffer()
+    console.log('PPTX download ok, size:', arrayBuffer.byteLength, 'bytes')
+
+    if (arrayBuffer.byteLength === 0) {
+      console.error('Downloaded file is empty')
+      return NextResponse.json(
+        { error: 'Downloaded file is empty' },
+        { status: 500 }
+      )
+    }
+
+    // Step 3: extract text from the PPTX ZIP archive
+    const text = await extractPptxText(arrayBuffer)
+    console.log('Extracted text length:', text.length)
 
     if (!text || text.trim().length === 0) {
       return NextResponse.json({ text: null })
@@ -60,7 +77,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ text: text.trim() })
   } catch (error) {
-    console.error('Error extracting PPTX text:', error)
+    const msg = error instanceof Error ? error.message : String(error)
+    const stack = error instanceof Error ? error.stack : undefined
+    console.error('Error extracting PPTX text:', msg)
+    if (stack) console.error('Stack:', stack)
     return NextResponse.json(
       { error: 'Failed to extract text from file' },
       { status: 500 }
@@ -69,38 +89,49 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Extract plain text from a PPTX buffer.
- * PPTX format: ZIP archive with slide XML files at ppt/slides/slide*.xml
- * Text content lives in <a:t> elements within those XML files.
+ * Extract plain text from a raw PPTX ArrayBuffer.
+ * Iterates every ppt/slides/slideN.xml in the ZIP, strips XML tags,
+ * and joins all <a:t> text runs.
  */
-async function extractPptxText(buffer: Buffer): Promise<string> {
-  const zip = await JSZip.loadAsync(buffer)
+async function extractPptxText(arrayBuffer: ArrayBuffer): Promise<string> {
+  let zip: JSZip
 
-  // Collect slide file names and sort them numerically
-  const slideNames = Object.keys(zip.files)
+  try {
+    zip = await JSZip.loadAsync(arrayBuffer)
+  } catch (zipErr) {
+    console.error('JSZip.loadAsync failed:', zipErr)
+    throw new Error(`Not a valid ZIP/PPTX file: ${zipErr instanceof Error ? zipErr.message : String(zipErr)}`)
+  }
+
+  const allFiles = Object.keys(zip.files)
+  console.log('ZIP contains', allFiles.length, 'entries')
+
+  // Slide XMLs are at ppt/slides/slide1.xml, slide2.xml, …
+  const slideNames = allFiles
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((a, b) => {
-      const numA = parseInt(a.match(/\d+/)?.[0] ?? '0', 10)
-      const numB = parseInt(b.match(/\d+/)?.[0] ?? '0', 10)
+      const numA = parseInt(a.match(/\d+/)![0], 10)
+      const numB = parseInt(b.match(/\d+/)![0], 10)
       return numA - numB
     })
 
+  console.log('Slide files found:', slideNames.length, slideNames)
+
   if (slideNames.length === 0) {
+    // Not found — might be an older PPTX or a different structure
     return ''
   }
 
   const slideParts: string[] = []
 
-  for (const slideName of slideNames) {
-    const xml = await zip.files[slideName].async('text')
-
-    // Extract all text runs: <a:t>...</a:t>
-    const textRuns = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)]
+  for (const name of slideNames) {
+    const xml = await zip.files[name].async('text')
+    // <a:t> elements hold the actual text runs in DrawingML
+    const runs = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)]
       .map((m) => m[1].trim())
       .filter(Boolean)
-
-    if (textRuns.length > 0) {
-      slideParts.push(textRuns.join(' '))
+    if (runs.length > 0) {
+      slideParts.push(runs.join(' '))
     }
   }
 
