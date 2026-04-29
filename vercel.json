@@ -3,5 +3,19 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "functions": {
+    "app/api/extract-pptx-text/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/generate-notes/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/merge-pptx/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }

@@ -9,7 +9,25 @@
       "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__execute_sql",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__apply_migration"
+      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__apply_migration",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__list_teams",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__list_projects",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__list_deployments",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__get_deployment_build_logs",
+      "Bash(vercel whoami *)",
+      "Bash(vercel env *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(vercel ls *)",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__deploy_to_vercel",
+      "Bash(vercel deploy *)",
+      "mcp__be8a08ae-e046-46f8-96b6-f29ce15fff3e__list_tables",
+      "mcp__2d73915a-01fe-4561-9b33-44f07518ccc1__get_runtime_logs",
+      "Bash(npx vercel *)",
+      "Bash(npm install *)",
+      "Bash(timeout 10)",
+      "Bash(node -e \"const p = require\\('./node_modules/pdfjs-dist/package.json'\\); console.log\\(p.version, p.main, p.exports ? Object.keys\\(p.exports\\).slice\\(0,10\\) : 'no exports'\\)\")"
     ]
   }
 }

@@ -17,9 +17,26 @@ import JSZip from 'jszip'
  */
 export async function POST(request: NextRequest) {
   try {
+    // Verify environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error('NEXT_PUBLIC_SUPABASE_URL is not set')
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing Supabase URL' },
+        { status: 500 }
+      )
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is not set')
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing service role key' },
+        { status: 500 }
+      )
+    }
+
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
@@ -32,6 +49,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    console.log('Extracting text from:', storagePath)
 
     // Step 1: generate a signed URL (60 s)
     const { data: signedData, error: signedError } = await supabase.storage
@@ -90,8 +109,14 @@ export async function POST(request: NextRequest) {
     const stack = error instanceof Error ? error.stack : undefined
     console.error('Error extracting file text:', msg)
     if (stack) console.error('Stack:', stack)
+    
+    // Return more detailed error message for debugging
     return NextResponse.json(
-      { error: 'Failed to extract text from file' },
+      { 
+        error: 'Failed to extract text from file',
+        details: msg,
+        hint: 'Check Vercel logs for more details'
+      },
       { status: 500 }
     )
   }
