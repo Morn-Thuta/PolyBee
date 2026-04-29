@@ -66,44 +66,47 @@ export function ModuleWorkspace({
   const [extractedText, setExtractedText] = useState<string | null>(null)
 
   const handleUploadComplete = (storagePath: string, filename: string) => {
-    const mimeType = filename.endsWith('.pdf')
+    const mimeType = filename.toLowerCase().endsWith('.pdf')
       ? 'application/pdf'
       : 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    
+
     setUploadedFile({ storagePath, filename, mimeType })
     // Auto-suggest title from filename
     const titleSuggestion = filename.replace(/\.(pdf|pptx)$/i, '')
     setNoteTitle(titleSuggestion)
-    
+
     // Auto-extract text
     handleExtractText(storagePath, mimeType)
   }
 
   const handleExtractText = async (storagePath: string, mimeType: string) => {
     setExtracting(true)
-    
+
     try {
       let text: string | null = null
 
       if (mimeType === 'application/pdf') {
-        // Extract text from PDF via server-side API
-        console.log('Extracting PDF text from:', storagePath)
-        const response = await fetch('/api/extract-pptx-text', {
+        // PDFs: get a signed URL from the server, then extract text client-side
+        // using pdfjs-dist (requires a browser context — cannot use JSZip server-side)
+        console.log('Extracting PDF text client-side from:', storagePath)
+        const urlRes = await fetch('/api/signed-url', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ storagePath }),
         })
 
-        if (!response.ok) {
-          const errorData = await response.json()
-          console.error('PDF extraction failed:', errorData)
-          throw new Error(errorData.error || 'Failed to extract text from PDF')
+        if (!urlRes.ok) {
+          const err = await urlRes.json()
+          throw new Error(err.error || 'Failed to get file URL')
         }
 
-        const data = await response.json()
-        text = data.text
+        const { signedUrl } = await urlRes.json()
+        const fileRes = await fetch(signedUrl)
+        if (!fileRes.ok) throw new Error('Failed to download PDF')
+        const blob = await fileRes.blob()
+        text = await extractPdfText(blob)
       } else {
-        // Extract text from PPTX server-side
+        // PPTX: extract server-side with JSZip (no browser worker needed)
         console.log('Extracting PPTX text from:', storagePath)
         const response = await fetch('/api/extract-pptx-text', {
           method: 'POST',
