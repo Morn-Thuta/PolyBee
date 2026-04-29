@@ -10,7 +10,6 @@ import { Plus, FileText, Upload, Sparkles, MoreVertical, Trash2, Eye, Loader2 } 
 import { FileUploader } from '@/components/files/FileUploader'
 import { StyleSelector } from '@/components/notes/StyleSelector'
 import { NoteStyle } from '@/lib/ai/note-styles'
-import { extractPdfText } from '@/lib/files/pdf-utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,44 +84,23 @@ export function ModuleWorkspace({
     try {
       let text: string | null = null
 
-      if (mimeType === 'application/pdf') {
-        // PDFs: get a signed URL from the server, then extract text client-side
-        // using pdfjs-dist (requires a browser context — cannot use JSZip server-side)
-        console.log('Extracting PDF text client-side from:', storagePath)
-        const urlRes = await fetch('/api/signed-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storagePath }),
-        })
+      // Both PDF and PPTX are handled server-side — the API route detects
+      // the file type by magic bytes and uses the appropriate extractor.
+      console.log('Extracting text from:', storagePath, '(type:', mimeType, ')')
+      const response = await fetch('/api/extract-pptx-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath }),
+      })
 
-        if (!urlRes.ok) {
-          const err = await urlRes.json()
-          throw new Error(err.error || 'Failed to get file URL')
-        }
-
-        const { signedUrl } = await urlRes.json()
-        const fileRes = await fetch(signedUrl)
-        if (!fileRes.ok) throw new Error('Failed to download PDF')
-        const blob = await fileRes.blob()
-        text = await extractPdfText(blob)
-      } else {
-        // PPTX: extract server-side with JSZip (no browser worker needed)
-        console.log('Extracting PPTX text from:', storagePath)
-        const response = await fetch('/api/extract-pptx-text', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storagePath }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          console.error('PPTX extraction failed:', errorData)
-          throw new Error(errorData.error || 'Failed to extract text from PPTX')
-        }
-
-        const data = await response.json()
-        text = data.text
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Extraction failed:', errorData)
+        throw new Error(errorData.error || 'Failed to extract text from file')
       }
+
+      const data = await response.json()
+      text = data.text
 
       console.log('Extracted text length:', text?.length || 0)
 

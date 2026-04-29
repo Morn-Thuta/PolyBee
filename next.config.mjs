@@ -15,12 +15,10 @@ if (fs.existsSync(workerSrc)) {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // pdfjs-dist tries to require 'canvas' for server-side rendering.
-      // We only use it in the browser, so stub it out to prevent webpack errors.
-      config.resolve.alias.canvas = false
-    }
+  webpack: (config) => {
+    // pdfjs-dist tries to require 'canvas' in both browser and server bundles.
+    // Stub it out everywhere — we never use canvas rendering, only text extraction.
+    config.resolve.alias.canvas = false
     return config
   },
   experimental: {
