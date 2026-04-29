@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
 /**
  * POST /api/signed-url
@@ -8,16 +8,16 @@ import { createClient } from '@/lib/supabase/server'
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
 
     const body = await request.json()
     const { storagePath } = body
@@ -29,10 +29,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create a signed URL that expires in 60 seconds — enough to download once
+    // Create a signed URL valid for 120 seconds — enough to download once
     const { data, error } = await supabase.storage
       .from('uploads')
-      .createSignedUrl(storagePath, 60)
+      .createSignedUrl(storagePath, 120)
 
     if (error || !data?.signedUrl) {
       console.error('Error creating signed URL:', error)

@@ -33,7 +33,7 @@ export default function GeneratePage() {
     setUploadedFile({
       storagePath,
       filename,
-      mimeType: filename.endsWith('.pdf')
+      mimeType: filename.toLowerCase().endsWith('.pdf')
         ? 'application/pdf'
         : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     })
