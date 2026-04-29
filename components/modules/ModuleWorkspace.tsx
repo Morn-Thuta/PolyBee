@@ -84,23 +84,50 @@ export function ModuleWorkspace({
     try {
       let text: string | null = null
 
-      // Both PDF and PPTX are handled server-side — the API route detects
-      // the file type by magic bytes and uses the appropriate extractor.
-      console.log('Extracting text from:', storagePath, '(type:', mimeType, ')')
-      const response = await fetch('/api/extract-pptx-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storagePath }),
-      })
+      if (mimeType === 'application/pdf') {
+        // PDFs: get a signed URL from the server (service role key), then
+        // extract text client-side using pdfjs (which needs a browser context)
+        console.log('Extracting PDF text client-side from:', storagePath)
+        
+        const urlRes = await fetch('/api/signed-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storagePath }),
+        })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Extraction failed:', errorData)
-        throw new Error(errorData.error || 'Failed to extract text from file')
+        if (!urlRes.ok) {
+          const err = await urlRes.json()
+          throw new Error(err.error || 'Failed to get file URL')
+        }
+
+        const { signedUrl } = await urlRes.json()
+        const fileRes = await fetch(signedUrl)
+        if (!fileRes.ok) throw new Error('Failed to download PDF')
+        
+        const blob = await fileRes.blob()
+        
+        // Dynamic import to avoid loading pdfjs on server
+        const { extractPdfText } = await import('@/lib/files/pdf-utils')
+        text = await extractPdfText(blob)
+      } else {
+        // PPTX: extract server-side with JSZip (no browser worker needed)
+        console.log('Extracting PPTX text server-side from:', storagePath)
+        
+        const response = await fetch('/api/extract-pptx-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storagePath }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('Extraction failed:', errorData)
+          throw new Error(errorData.error || 'Failed to extract text from file')
+        }
+
+        const data = await response.json()
+        text = data.text
       }
-
-      const data = await response.json()
-      text = data.text
 
       console.log('Extracted text length:', text?.length || 0)
 
